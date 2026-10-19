@@ -21,3 +21,14 @@ The app loads the live site at `https://web.zvykmusic.ru/` in a WebView, so the 
 
 ## Important
 This is a debug APK workflow (not a Play Store release). For Play Store distribution, create a signed release with a keystore stored in GitHub Secrets. Never commit signing keys or passwords. This project has not been tested against private APIs; it only opens the public HTTPS site in an Android WebView. Android playback/background behavior depends on the site's player and browser-compatible media implementation.
+
+
+## Исправления стабильности (версия проекта после белого экрана)
+
+- WebView создаётся после установки основного layout.
+- При сетевой/серверной ошибке показывается экран с кнопкой повтора вместо пустого экрана.
+- Обрабатывается завершение процесса рендеринга WebView (`onRenderProcessGone`), чтобы оно не закрывало Activity.
+- Ошибки загрузки и HTTP 5xx записываются в Logcat с тегом `Zvykmusic`.
+- Внешние ссылки обрабатываются безопаснее: приложение не падает, если нет подходящего приложения для ссылки.
+
+Это защитные исправления, а не подтверждение причины конкретного сбоя: для точного диагноза нужен отчёт Logcat или Play Console. Сборку следует проверить на реальном устройстве перед публикацией.

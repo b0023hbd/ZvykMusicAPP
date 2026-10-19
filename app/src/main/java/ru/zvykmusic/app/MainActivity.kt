@@ -3,14 +3,18 @@ package ru.zvykmusic.app
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.graphics.Color
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import android.view.Gravity
 import android.view.View
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -20,9 +24,12 @@ import android.widget.TextView
 import android.widget.Toast
 
 class MainActivity : Activity() {
-    private lateinit var web: WebView
     private lateinit var root: LinearLayout
+    private lateinit var webContainer: LinearLayout
     private lateinit var bottom: LinearLayout
+    private var web: WebView? = null
+    private var errorView: LinearLayout? = null
+
     private val bg = Color.rgb(11, 11, 18)
     private val surface = Color.rgb(23, 23, 34)
     private val prefs by lazy { getSharedPreferences("zvyk_settings", MODE_PRIVATE) }
@@ -39,6 +46,7 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(bg)
         }
+
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -52,39 +60,21 @@ class MainActivity : Activity() {
             typeface = android.graphics.Typeface.DEFAULT_BOLD
         }
         header.addView(brand, LinearLayout.LayoutParams(0, dp(48), 1f))
-        val settings = Button(this).apply {
+        val appearanceButton = Button(this).apply {
             text = "🎨"
             contentDescription = "Настроить оформление"
             setTextColor(Color.WHITE)
             setBackgroundColor(surface)
             setOnClickListener { showAppearanceDialog() }
         }
-        header.addView(settings, LinearLayout.LayoutParams(dp(52), dp(44)))
+        header.addView(appearanceButton, LinearLayout.LayoutParams(dp(52), dp(44)))
         root.addView(header)
 
-        web = WebView(this).apply {
+        webContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
             setBackgroundColor(bg)
-            settings.javaScriptEnabled = true
-            settings.domStorageEnabled = true
-            settings.mediaPlaybackRequiresUserGesture = true
-            settings.allowFileAccess = false
-            settings.allowContentAccess = true
-            webChromeClient = WebChromeClient()
-            webViewClient = object : WebViewClient() {
-                override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
-                    val uri = request?.url ?: return false
-                    if (uri.scheme == "https" && uri.host == "web.zvykmusic.ru") return false
-                    if (uri.scheme == "http" || uri.scheme == "https") {
-                        startActivity(Intent(Intent.ACTION_VIEW, uri))
-                        return true
-                    }
-                    return true
-                }
-            }
-            CookieManager.getInstance().setAcceptCookie(true)
-            loadUrl(SiteConfig.HOME)
         }
-        root.addView(web, LinearLayout.LayoutParams(-1, 0, 1f))
+        root.addView(webContainer, LinearLayout.LayoutParams(-1, 0, 1f))
 
         bottom = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -97,8 +87,132 @@ class MainActivity : Activity() {
         addTab("♬\nАртисты", SiteConfig.ARTISTS)
         addTab("☺\nПрофиль", SiteConfig.PROFILE)
         root.addView(bottom, LinearLayout.LayoutParams(-1, dp(62)))
+
+        // Attach the view hierarchy before starting WebView navigation.
         setContentView(root)
         styleTabs()
+        createWebView(SiteConfig.HOME)
+    }
+
+    @SuppressLint("SetJavaScriptEnabled")
+    private fun createWebView(url: String) {
+        errorView?.let { webContainer.removeView(it) }
+        errorView = null
+        web?.let { oldWeb ->
+            webContainer.removeView(oldWeb)
+            oldWeb.stopLoading()
+            oldWeb.destroy()
+        }
+        web = null
+
+        val newWeb = WebView(this)
+        web = newWeb
+        newWeb.setBackgroundColor(bg)
+        newWeb.isFocusable = true
+        newWeb.isFocusableInTouchMode = true
+        newWeb.settings.apply {
+            javaScriptEnabled = true
+            domStorageEnabled = true
+            mediaPlaybackRequiresUserGesture = true
+            allowFileAccess = false
+            allowContentAccess = true
+            javaScriptCanOpenWindowsAutomatically = false
+            setSupportMultipleWindows(false)
+        }
+        CookieManager.getInstance().setAcceptCookie(true)
+        CookieManager.getInstance().setAcceptThirdPartyCookies(newWeb, true)
+        newWeb.webChromeClient = WebChromeClient()
+        newWeb.webViewClient = object : WebViewClient() {
+            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                val uri = request.url
+                val host = uri.host.orEmpty().lowercase()
+                if (uri.scheme == "https" && (host == "web.zvykmusic.ru" || host == "zvykmusic.ru" || host.endsWith(".zvykmusic.ru"))) {
+                    return false
+                }
+                if (uri.scheme == "http" || uri.scheme == "https" || uri.scheme == "mailto" || uri.scheme == "tel") {
+                    return openExternal(uri)
+                }
+                return true
+            }
+
+            override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
+                super.onReceivedError(view, request, error)
+                if (request.isForMainFrame) {
+                    Log.e("Zvykmusic", "WebView load error ${error.errorCode}: ${error.description}")
+                    showLoadError()
+                }
+            }
+
+            override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, errorResponse: android.webkit.WebResourceResponse) {
+                super.onReceivedHttpError(view, request, errorResponse)
+                if (request.isForMainFrame && errorResponse.statusCode >= 500) {
+                    Log.e("Zvykmusic", "HTTP ${errorResponse.statusCode} loading ${request.url}")
+                    showLoadError()
+                }
+            }
+
+            override fun onRenderProcessGone(view: WebView, detail: android.webkit.RenderProcessGoneDetail): Boolean {
+                Log.e("Zvykmusic", "WebView renderer exited; crashed=${detail.didCrash()}")
+                if (web === view) {
+                    webContainer.removeView(view)
+                    view.destroy()
+                    web = null
+                    showLoadError()
+                } else {
+                    view.destroy()
+                }
+                // Required by Android to prevent renderer termination from crashing the Activity.
+                return true
+            }
+        }
+        webContainer.addView(newWeb, LinearLayout.LayoutParams(-1, -1))
+        newWeb.loadUrl(url)
+    }
+
+    private fun showLoadError() {
+        if (isFinishing || isDestroyed) return
+        runOnUiThread {
+            if (isFinishing || isDestroyed) return@runOnUiThread
+            if (errorView?.parent != null) return@runOnUiThread
+            val panel = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                setPadding(dp(24), dp(24), dp(24), dp(24))
+                setBackgroundColor(bg)
+            }
+            panel.addView(TextView(this).apply {
+                text = "Не удалось открыть Zvykmusic"
+                textSize = 18f
+                gravity = Gravity.CENTER
+                setTextColor(Color.WHITE)
+            }, LinearLayout.LayoutParams(-1, -2))
+            panel.addView(TextView(this).apply {
+                text = "Проверь подключение к интернету и попробуй ещё раз."
+                textSize = 14f
+                gravity = Gravity.CENTER
+                setTextColor(Color.LTGRAY)
+                setPadding(0, dp(10), 0, dp(16))
+            }, LinearLayout.LayoutParams(-1, -2))
+            panel.addView(Button(this).apply {
+                text = "Повторить"
+                setOnClickListener { createWebView(SiteConfig.HOME) }
+            })
+            errorView = panel
+            webContainer.addView(panel, LinearLayout.LayoutParams(-1, -1))
+        }
+    }
+
+    private fun openExternal(uri: Uri): Boolean {
+        return try {
+            startActivity(Intent(Intent.ACTION_VIEW, uri))
+            true
+        } catch (_: ActivityNotFoundException) {
+            Toast.makeText(this, "Нет приложения для открытия этой ссылки", Toast.LENGTH_SHORT).show()
+            true
+        } catch (e: Exception) {
+            Log.e("Zvykmusic", "Could not open external URL: $uri", e)
+            true
+        }
     }
 
     private fun addTab(label: String, url: String) {
@@ -109,15 +223,19 @@ class MainActivity : Activity() {
             setTextColor(Color.WHITE)
             setPadding(dp(2), dp(5), dp(2), dp(5))
             setOnClickListener {
-                if (url == SiteConfig.SEARCH) {
-                    web.evaluateJavascript(
+                val currentWeb = web
+                if (currentWeb == null) {
+                    createWebView(url)
+                } else if (url == SiteConfig.SEARCH) {
+                    currentWeb.evaluateJavascript(
                         "(function(){var e=document.querySelector('input[type=search],input[placeholder*=Поиск],input[placeholder*=поиск]'); if(e){e.focus();return 'focused';} location.href='${url}'; return 'navigate';})()",
                         null
                     )
-                } else web.loadUrl(url)
+                } else {
+                    currentWeb.loadUrl(url)
+                }
             }
         }
-        button.tag = "tab"
         bottom.addView(button, LinearLayout.LayoutParams(0, -1, 1f))
     }
 
@@ -151,11 +269,18 @@ class MainActivity : Activity() {
 
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
-        if (::web.isInitialized && web.canGoBack()) web.goBack() else super.onBackPressed()
+        val currentWeb = web
+        if (currentWeb != null && currentWeb.canGoBack()) currentWeb.goBack()
+        else super.onBackPressed()
     }
 
     override fun onDestroy() {
-        if (::web.isInitialized) web.destroy()
+        web?.let {
+            (it.parent as? android.view.ViewGroup)?.removeView(it)
+            it.stopLoading()
+            it.destroy()
+        }
+        web = null
         super.onDestroy()
     }
 }
