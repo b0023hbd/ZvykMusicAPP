@@ -1,0 +1,7 @@
+<resources>
+    <color name="purple">#8B5CF6</color>
+    <color name="background">#0B0B12</color>
+    <color name="surface">#171722</color>
+    <color name="text_primary">#FFFFFF</color>
+    <color name="text_secondary">#B7B7C8</color>
+</resources>
