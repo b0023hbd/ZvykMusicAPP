@@ -46,3 +46,10 @@ This is a debug APK workflow (not a Play Store release). For Play Store distribu
 Проект всё ещё использует WebView для отображения сайта. Сам по себе технически исправный WebView не гарантирует одобрение: Google Play может отклонить приложения, которые лишь показывают сайт и не дают достаточной самостоятельной ценности или не имеют разрешения владельца сайта. Для полноценной публикации стоит добавить действительно полезные нативные функции и подтвердить право распространять сайт в приложении.
 
 Сборка не была выполнена в этой среде и не проверялась на физическом устройстве. Запусти GitHub Actions и проверь, что workflow завершился успешно, прежде чем устанавливать артефакт.
+
+
+## Glass UI and media controls (experimental)
+
+The native shell now uses translucent dark panels and includes a compact media bar. A JavaScript bridge attempts to read HTML audio/video metadata and provides play/pause and +/-10 second seeking. Android MediaSession exposes transport actions. Next/previous buttons use generic DOM selectors and will only work if the site exposes matching controls.
+
+**Limitations:** this is an integration prototype, not verified background playback. Reliable lock-screen/notification controls and playback while Android backgrounds or kills the Activity require a dedicated foreground media service and testing against the site's actual player/API. Site routes and track controls cannot be fully synchronized from the Android wrapper alone; use the website source/API or documented player events for a robust integration.
