@@ -2,10 +2,6 @@ package ru.zvykmusic.app
 
 import android.annotation.SuppressLint
 import android.app.Activity
-import android.media.MediaMetadata
-import android.media.session.MediaSession
-import android.media.session.PlaybackState
-import android.webkit.JavascriptInterface
 import android.app.AlertDialog
 import android.content.ActivityNotFoundException
 import android.content.Intent
@@ -38,15 +34,6 @@ class MainActivity : Activity() {
     private val surface = Color.rgb(23, 23, 34)
     private val prefs by lazy { getSharedPreferences("zvyk_settings", MODE_PRIVATE) }
     private var accent = Color.rgb(139, 92, 246)
-    private lateinit var trackTitle: TextView
-    private lateinit var trackSubtitle: TextView
-    private lateinit var playPauseButton: TextView
-    private var mediaSession: MediaSession? = null
-    private var isPlaying = false
-    private var currentTitle = "Zvykmusic"
-    private var currentArtist = "Выберите трек на сайте"
-    private var durationMs = 0L
-    private var positionMs = 0L
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -59,13 +46,12 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(bg)
         }
-        setupMediaSession()
 
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(16), dp(8), dp(12), dp(8))
-            setBackgroundColor(Color.argb(220, 20, 20, 31))
+            setBackgroundColor(bg)
         }
         val brand = TextView(this).apply {
             text = "Zvykmusic"
@@ -90,29 +76,9 @@ class MainActivity : Activity() {
         }
         root.addView(webContainer, LinearLayout.LayoutParams(-1, 0, 1f))
 
-        val miniPlayer = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(12), dp(7), dp(12), dp(7))
-            setBackgroundColor(Color.argb(224, 31, 29, 46))
-        }
-        val trackText = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_VERTICAL }
-        trackTitle = TextView(this).apply { text = currentTitle; textSize = 13f; setTextColor(Color.WHITE); maxLines = 1; typeface = android.graphics.Typeface.DEFAULT_BOLD }
-        trackSubtitle = TextView(this).apply { text = currentArtist; textSize = 11f; setTextColor(Color.LTGRAY); maxLines = 1 }
-        trackText.addView(trackTitle)
-        trackText.addView(trackSubtitle)
-        miniPlayer.addView(trackText, LinearLayout.LayoutParams(0, dp(42), 1f))
-        val backButton = TextView(this).apply { text = "−10"; textSize = 14f; gravity = Gravity.CENTER; setTextColor(Color.WHITE); setOnClickListener { seekBy(-10000) } }
-        miniPlayer.addView(backButton, LinearLayout.LayoutParams(dp(42), dp(42)))
-        playPauseButton = TextView(this).apply { text = "▶"; textSize = 20f; gravity = Gravity.CENTER; setTextColor(Color.WHITE); setOnClickListener { togglePlayback() } }
-        miniPlayer.addView(playPauseButton, LinearLayout.LayoutParams(dp(46), dp(42)))
-        val forwardButton = TextView(this).apply { text = "+10"; textSize = 14f; gravity = Gravity.CENTER; setTextColor(Color.WHITE); setOnClickListener { seekBy(10000) } }
-        miniPlayer.addView(forwardButton, LinearLayout.LayoutParams(dp(42), dp(42)))
-        root.addView(miniPlayer, LinearLayout.LayoutParams(-1, dp(58)))
-
         bottom = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setBackgroundColor(Color.argb(236, 24, 23, 36))
+            setBackgroundColor(surface)
             setPadding(dp(4), dp(4), dp(4), dp(4))
         }
         addTab("⌂\nГлавная", SiteConfig.HOME)
@@ -156,13 +122,7 @@ class MainActivity : Activity() {
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(newWeb, true)
         newWeb.webChromeClient = WebChromeClient()
-        newWeb.addJavascriptInterface(MediaBridge(), "ZvykNativeMedia")
         newWeb.webViewClient = object : WebViewClient() {
-            override fun onPageFinished(view: WebView, url: String) {
-                super.onPageFinished(view, url)
-                injectMediaBridge(view)
-            }
-
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 val uri = request.url
                 val host = uri.host.orEmpty().lowercase()
@@ -173,6 +133,12 @@ class MainActivity : Activity() {
                     return openExternal(uri)
                 }
                 return true
+            }
+
+            override fun onPageFinished(view: WebView, url: String) {
+                super.onPageFinished(view, url)
+                // Keep the real website as the source of truth; enhance its presentation in-app.
+                view.evaluateJavascript(GLASS_ENHANCEMENT_SCRIPT, null)
             }
 
             override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
@@ -207,69 +173,6 @@ class MainActivity : Activity() {
         }
         webContainer.addView(newWeb, LinearLayout.LayoutParams(-1, -1))
         newWeb.loadUrl(url)
-    }
-
-    private fun setupMediaSession() {
-        mediaSession = MediaSession(this, "ZvykmusicPlayer").apply {
-            setFlags(MediaSession.FLAG_HANDLES_MEDIA_BUTTONS or MediaSession.FLAG_HANDLES_TRANSPORT_CONTROLS)
-            setCallback(object : MediaSession.Callback() {
-                override fun onPlay() { runOnUiThread { controlWebMedia("play"); isPlaying = true; updateMediaState() } }
-                override fun onPause() { runOnUiThread { controlWebMedia("pause"); isPlaying = false; updateMediaState() } }
-                override fun onSkipToNext() { runOnUiThread { clickSiteTrackButton(true) } }
-                override fun onSkipToPrevious() { runOnUiThread { clickSiteTrackButton(false) } }
-                override fun onSeekTo(pos: Long) { runOnUiThread { seekTo(pos) } }
-            })
-            isActive = true
-        }
-        updateMediaState()
-    }
-
-    private inner class MediaBridge {
-        @JavascriptInterface fun onTrack(title: String?, artist: String?, duration: Double, position: Double, playing: Boolean) {
-            runOnUiThread {
-                currentTitle = title?.takeIf { it.isNotBlank() } ?: "Zvykmusic"
-                currentArtist = artist?.takeIf { it.isNotBlank() } ?: "Воспроизведение на сайте"
-                durationMs = (duration * 1000).toLong().coerceAtLeast(0)
-                positionMs = (position * 1000).toLong().coerceAtLeast(0)
-                isPlaying = playing
-                trackTitle.text = currentTitle
-                trackSubtitle.text = currentArtist
-                playPauseButton.text = if (isPlaying) "Ⅱ" else "▶"
-                updateMediaState()
-            }
-        }
-    }
-
-    private fun injectMediaBridge(view: WebView) {
-        val js = """(function(){
-          if(window.__zvykMediaHooked)return; window.__zvykMediaHooked=true;
-          function media(){return Array.from(document.querySelectorAll('audio,video')).find(x=>!x.paused&&!x.ended)||document.querySelector('audio,video');}
-          function report(){var m=media(); if(!m)return; var title=document.querySelector('meta[property="og:title"]')?.content||document.title||'Zvykmusic'; var artist=document.querySelector('[class*=artist i]')?.innerText||'Воспроизведение на сайте'; try{ZvykNativeMedia.onTrack(title,artist,m.duration||0,m.currentTime||0,!m.paused&&!m.ended)}catch(e){}}
-          document.addEventListener('play',report,true);document.addEventListener('pause',report,true);document.addEventListener('timeupdate',report,true);document.addEventListener('loadedmetadata',report,true);setInterval(report,2000);
-          window.__zvykControl=function(action,value){var m=media();if(!m)return false;try{if(action==='play')m.play();else if(action==='pause')m.pause();else if(action==='seek')m.currentTime=Math.max(0,Math.min(m.duration||1,value/1000));return true}catch(e){return false}};
-          window.__zvykSkip=function(next){var sels=next?['[aria-label*=next i]','button[title*=next i]','button[class*=next i]','[data-testid*=next i]']:['[aria-label*=previous i]','[aria-label*=prev i]','button[title*=previous i]','button[class*=prev i]','[data-testid*=previous i]'];for(var s of sels){var e=document.querySelector(s);if(e){e.click();return true}}return false}; report();
-        })();"""
-        view.evaluateJavascript(js, null)
-    }
-
-    private fun controlWebMedia(action: String) {
-        web?.evaluateJavascript("window.__zvykControl && window.__zvykControl('$action',0)", null)
-    }
-
-    private fun seekBy(delta: Long) { seekTo(positionMs + delta) }
-    private fun seekTo(position: Long) {
-        positionMs = position.coerceAtLeast(0).let { if (durationMs > 0) it.coerceAtMost(durationMs) else it }
-        web?.evaluateJavascript("window.__zvykControl && window.__zvykControl('seek',$positionMs)", null)
-        updateMediaState()
-    }
-    private fun togglePlayback() { controlWebMedia(if (isPlaying) "pause" else "play"); isPlaying = !isPlaying; updateMediaState() }
-    private fun clickSiteTrackButton(next: Boolean) {
-        web?.evaluateJavascript("window.__zvykSkip && window.__zvykSkip($next)", null)
-    }
-    private fun updateMediaState() {
-        val actions = PlaybackState.ACTION_PLAY or PlaybackState.ACTION_PAUSE or PlaybackState.ACTION_PLAY_PAUSE or PlaybackState.ACTION_SKIP_TO_NEXT or PlaybackState.ACTION_SKIP_TO_PREVIOUS or PlaybackState.ACTION_SEEK_TO
-        mediaSession?.setMetadata(MediaMetadata.Builder().putString(MediaMetadata.METADATA_KEY_TITLE, currentTitle).putString(MediaMetadata.METADATA_KEY_ARTIST, currentArtist).putLong(MediaMetadata.METADATA_KEY_DURATION, durationMs).build())
-        mediaSession?.setPlaybackState(PlaybackState.Builder().setActions(actions).setState(if (isPlaying) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED, positionMs, 1f).build())
     }
 
     private fun showLoadError() {
@@ -368,6 +271,58 @@ class MainActivity : Activity() {
             .show()
     }
 
+    private val GLASS_ENHANCEMENT_SCRIPT = """
+        (function() {
+          if (window.__zvykGlassInstalled) return;
+          window.__zvykGlassInstalled = true;
+          var style = document.createElement('style');
+          style.id = 'zvyk-glass-theme';
+          style.textContent = `
+            :root { color-scheme: dark; --zvyk-accent: #a78bfa; --zvyk-glass: rgba(255,255,255,.075); --zvyk-line: rgba(255,255,255,.12); }
+            html { background: #090910 !important; }
+            body { background: radial-gradient(ellipse at 15% 0%, rgba(124,58,237,.20), transparent 42%), radial-gradient(ellipse at 100% 35%, rgba(14,165,233,.10), transparent 35%), #090910 !important; color: #f6f4ff !important; }
+            header, nav, [role=navigation], .navbar, .nav, .topbar, .bottom-nav, .sidebar { background: rgba(18,17,30,.72) !important; backdrop-filter: blur(24px) saturate(160%) !important; -webkit-backdrop-filter: blur(24px) saturate(160%) !important; border-color: var(--zvyk-line) !important; }
+            article, .card, [class*=card], [class*=track], [class*=album], [class*=playlist], [class*=artist], [class*=player], [class*=panel], [class*=tile] { border-color: var(--zvyk-line) !important; }
+            .card, [class*=card], [class*=track], [class*=album], [class*=playlist], [class*=artist], [class*=player], [class*=panel], [class*=tile] { background-color: rgba(255,255,255,.055) !important; border-radius: 18px !important; box-shadow: 0 8px 30px rgba(0,0,0,.14); }
+            button, [role=button], input, select, textarea { border-radius: 13px !important; }
+            button, [role=button] { transition: transform .16s ease, filter .16s ease; }
+            button:active, [role=button]:active { transform: scale(.97); }
+            input, select, textarea { background: rgba(255,255,255,.07) !important; color: #fff !important; border: 1px solid var(--zvyk-line) !important; }
+            a { color: #c4b5fd; }
+            img { border-radius: 12px; }
+            ::-webkit-scrollbar { width: 4px; height: 4px; } ::-webkit-scrollbar-thumb { background: rgba(167,139,250,.48); border-radius: 10px; }
+            .zvyk-wave { height: 46px; margin: 12px 0 16px; padding: 7px 10px; display:flex; align-items:center; gap:3px; overflow:hidden; border:1px solid rgba(255,255,255,.12); border-radius:16px; background:linear-gradient(115deg,rgba(139,92,246,.15),rgba(56,189,248,.08)); box-sizing:border-box; }
+            .zvyk-wave canvas { width:100%; height:100%; display:block; }
+          `;
+          (document.head || document.documentElement).appendChild(style);
+          function attachWave(audio) {
+            if (!audio || audio.dataset.zvykWave) return;
+            audio.dataset.zvykWave = '1';
+            var wrap = document.createElement('div'); wrap.className = 'zvyk-wave'; wrap.setAttribute('aria-label','Волна воспроизведения');
+            var canvas = document.createElement('canvas'); wrap.appendChild(canvas);
+            if (audio.parentNode) audio.parentNode.insertBefore(wrap, audio.nextSibling);
+            var ctx = canvas.getContext('2d'); var bars = []; var count = 76;
+            for (var i=0;i<count;i++) { var v = Math.abs(Math.sin(i*12.9898+4.1415)*43758.5453)%1; bars.push(.16 + v*.84); }
+            function draw() {
+              if (!canvas.isConnected) return;
+              var rect = wrap.getBoundingClientRect(); var dpr = Math.min(window.devicePixelRatio||1,2);
+              var w = Math.max(1,Math.floor(rect.width*dpr)), h = Math.max(1,Math.floor(rect.height*dpr));
+              if (canvas.width!==w || canvas.height!==h) { canvas.width=w; canvas.height=h; }
+              ctx.clearRect(0,0,w,h); var gap=3*dpr, bw=(w-gap*(count-1))/count; var progress=audio.duration>0?audio.currentTime/audio.duration:0;
+              for (var i=0;i<count;i++) { var bh=Math.max(3*dpr,bars[i]*(h*.88)); var x=i*(bw+gap), y=(h-bh)/2; var played=(i/count)<=progress; var grad=ctx.createLinearGradient(0,y,0,y+bh); grad.addColorStop(0,played?'#c4b5fd':'rgba(196,181,253,.52)'); grad.addColorStop(1,played?'#38bdf8':'rgba(56,189,248,.22)'); ctx.fillStyle=grad; ctx.beginPath(); if(ctx.roundRect) ctx.roundRect(x,y,bw,bh,bw/2); else ctx.rect(x,y,bw,bh); ctx.fill(); }
+              if (!audio.paused && !audio.ended) requestAnimationFrame(draw);
+            }
+            wrap.addEventListener('click',function(e){ if(audio.duration>0){var r=wrap.getBoundingClientRect();audio.currentTime=Math.max(0,Math.min(1,(e.clientX-r.left)/r.width))*audio.duration;draw();} });
+            ['play','pause','timeupdate','durationchange','seeked','ended'].forEach(function(ev){audio.addEventListener(ev,draw);});
+            if ('ResizeObserver' in window) new ResizeObserver(draw).observe(wrap); else window.addEventListener('resize',draw);
+            draw();
+          }
+          function scan() { document.querySelectorAll('audio').forEach(attachWave); }
+          scan();
+          new MutationObserver(scan).observe(document.documentElement,{childList:true,subtree:true});
+        })();
+    """.trimIndent()
+
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     @Deprecated("Deprecated in Java")
@@ -384,9 +339,6 @@ class MainActivity : Activity() {
             it.destroy()
         }
         web = null
-        mediaSession?.isActive = false
-        mediaSession?.release()
-        mediaSession = null
         super.onDestroy()
     }
 }

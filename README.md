@@ -47,9 +47,10 @@ This is a debug APK workflow (not a Play Store release). For Play Store distribu
 
 Сборка не была выполнена в этой среде и не проверялась на физическом устройстве. Запусти GitHub Actions и проверь, что workflow завершился успешно, прежде чем устанавливать артефакт.
 
+## Обновлённый интерфейс приложения
 
-## Glass UI and media controls (experimental)
+Приложение продолжает загружать настоящий сайт `https://web.zvykmusic.ru/` внутри WebView — каталог, поиск, аккаунт и действия сайта не дублируются отдельными фейковыми экранами. После загрузки страницы приложение добавляет тёмное glass-оформление и декоративную интерактивную аудиоволну рядом с HTML `<audio>` элементами. Волна показывает прогресс и позволяет перематывать трек нажатием.
 
-The native shell now uses translucent dark panels and includes a compact media bar. A JavaScript bridge attempts to read HTML audio/video metadata and provides play/pause and +/-10 second seeking. Android MediaSession exposes transport actions. Next/previous buttons use generic DOM selectors and will only work if the site exposes matching controls.
+## Автоматическая публикация APK
 
-**Limitations:** this is an integration prototype, not verified background playback. Reliable lock-screen/notification controls and playback while Android backgrounds or kills the Activity require a dedicated foreground media service and testing against the site's actual player/API. Site routes and track controls cannot be fully synchronized from the Android wrapper alone; use the website source/API or documented player events for a robust integration.
+GitHub Actions собирает debug APK при push в `main`/`master` и публикует его в GitHub Release с тегом `latest`, заменяя предыдущий `ZvykMusic.apk`. APK не загружается как Actions Artifact, поэтому не расходует квоту хранения Artifacts. Это debug-сборка; для публикации в Google Play нужно настроить подпись release-сборки собственным keystore.
