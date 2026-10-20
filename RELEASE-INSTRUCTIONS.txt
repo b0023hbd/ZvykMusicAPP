@@ -1,0 +1,17 @@
+ZvykMusic — публикация APK в GitHub Releases
+
+Workflow: .github/workflows/android.yml
+
+Что делает:
+- При каждом push в main/master (и при ручном запуске) собирает APK.
+- Публикует/обновляет GitHub Release с тегом `latest`.
+- Прикрепляет установочный файл `ZvykMusic.apk` в Release Assets.
+- Не загружает APK в Actions Artifacts, поэтому не расходует квоту хранения Artifacts.
+
+Важно:
+1. В настройках репозитория GitHub открой Settings > Actions > General.
+2. В разделе Workflow permissions разреши Read and write permissions, если политика репозитория требует этого.
+3. После загрузки файлов в репозиторий запусти Actions workflow или сделай push в main/master.
+4. Открой Releases и найди `ZvykMusic Latest`; APK будет в Assets.
+
+Примечание: это debug APK для прямой установки и тестирования, не подписанный production APK для Google Play.
