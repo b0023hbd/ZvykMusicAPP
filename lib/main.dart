@@ -129,7 +129,10 @@ class _MusicHomeState extends State<MusicHome> with TickerProviderStateMixin {
           artUri: t.cover.isEmpty ? null : Uri.tryParse(t.cover),
         ),
       )).toList();
-      await player.setAudioSources(sources, initialIndex: start);
+      await player.setAudioSource(
+        ConcatenatingAudioSource(children: sources),
+        initialIndex: start,
+      );
       await player.play();
       if (mounted) setState(() {});
     } catch (e) {
