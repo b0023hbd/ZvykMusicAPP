@@ -1,56 +1,62 @@
-# Zvykmusic Android
+# ZvykMusic — Apple Glass Flutter app
 
-Android app shell for https://web.zvykmusic.ru/ with a native app frame, configurable accent/theme, native bottom navigation and GitHub Actions APK builds.
+Это отдельный Flutter-интерфейс, не WebView. Каталог берётся с сайта ZvykMusic:
+в `index.php` сайта уже есть `window.ZVYK_TRACKS`, `title`, `artist`, `cover` и `audio`.
+Приложение запрашивает HTML главной страницы, извлекает именно этот каталог и играет
+аудио-URL через `just_audio`. Фоновое воспроизведение и системные медиа-контролы
+подключены через `just_audio_background`.
 
-## Build APK with GitHub Actions
-1. Create a new GitHub repository and upload the contents of this folder.
-2. Open **Actions** and enable workflows if GitHub asks.
-3. Run **Build Zvykmusic APK** using **Run workflow**, or push to `main`.
-4. Download `zvykmusic-debug-apk` from the successful workflow run's **Artifacts** section.
-5. Unzip the artifact and install `app-debug.apk` on Android. Allow installation from your browser/files app if prompted.
+## Важно перед запуском
 
-## Site integration
-The app loads the live site at `https://web.zvykmusic.ru/` in a WebView, so the existing catalog/account/site features remain served by your site. The bottom tabs load configurable URLs in `app/src/main/java/ru/zvykmusic/app/SiteConfig.kt`. Adjust those paths to match real routes on your site if needed.
+1. Открой `lib/config.dart`.
+2. Установи `siteBaseUrl` в точный публичный HTTPS-адрес своего сайта (без `/` в конце).
+   Сейчас стоит `https://web.zvykmusic.ru` как предварительное значение.
+3. На сервере главная страница должна быть доступна без авторизации и отдавать
+   `window.ZVYK_TRACKS` в HTML. Аудиофайлы должны быть доступны приложению по HTTPS.
+4. Эта загрузка каталога не заменяет полноценный API. В присланном ZIP были только
+   `index.php`, `assets/app.js` и `assets/style.css`; `app/bootstrap.php` и
+   `api/music.php` не были включены. Поэтому авторизация, изменение избранного,
+   плейлисты и история пока не подключены к нативным экранам. Для них нужен полный
+   backend/API или добавление документированного endpoint каталога.
 
-## Customize
-- App name: `app/src/main/res/values/strings.xml`
-- Colors: `app/src/main/res/values/colors.xml`
-- Tab destinations: `SiteConfig.kt`
-- Native settings: tap the palette icon in the top bar; accent choice is saved on device.
-- Package ID: `ru.zvykmusic.app` in Gradle and `MainActivity.kt`.
+## Сборка
 
-## Important
-This is a debug APK workflow (not a Play Store release). For Play Store distribution, create a signed release with a keystore stored in GitHub Secrets. Never commit signing keys or passwords. This project has not been tested against private APIs; it only opens the public HTTPS site in an Android WebView. Android playback/background behavior depends on the site's player and browser-compatible media implementation.
+Установи Flutter SDK и Android SDK, затем:
 
+```bash
+flutter pub get
+flutter create . --platforms=android
+flutter run
+```
 
-## Исправления стабильности (версия проекта после белого экрана)
+Для APK:
 
-- WebView создаётся после установки основного layout.
-- При сетевой/серверной ошибке показывается экран с кнопкой повтора вместо пустого экрана.
-- Обрабатывается завершение процесса рендеринга WebView (`onRenderProcessGone`), чтобы оно не закрывало Activity.
-- Ошибки загрузки и HTTP 5xx записываются в Logcat с тегом `Zvykmusic`.
-- Внешние ссылки обрабатываются безопаснее: приложение не падает, если нет подходящего приложения для ссылки.
+```bash
+flutter build apk --release
+```
 
-Это защитные исправления, а не подтверждение причины конкретного сбоя: для точного диагноза нужен отчёт Logcat или Play Console. Сборку следует проверить на реальном устройстве перед публикацией.
+Если `flutter create .` перезапишет Android-файлы, проверь permissions и сервисы
+медиа в `android/app/src/main/AndroidManifest.xml`.
 
+## Что реализовано в этой версии
 
-## Версия 1.1.0 — исправление конфигурации сборки
+- Нативные Flutter-экраны: главная, поиск, медиатека и now-playing.
+- Apple-inspired glass panels, ambient glow, градиенты и animated waveform.
+- Каталог и ссылки на треки/обложки из сайта, а не hard-coded demo tracks.
+- Поиск по названию, артисту и альбому.
+- Очередь, play/pause, next/previous, seek bar.
+- Поддержка фонового аудио и системных медиа-уведомлений.
 
-- Добавлен Kotlin Android Gradle Plugin: исходный `MainActivity.kt` был Kotlin, но плагин Kotlin в конфигурации сборки отсутствовал. Это могло приводить к ошибке сборки и означает, что прежнюю сборку нельзя считать подтверждённой.
-- Обновлены Android Gradle Plugin и Gradle.
-- `compileSdk` и `targetSdk` выставлены на API 36 с учётом требований Google Play, действующих с 31 августа 2026 года для новых приложений и обновлений.
-- GitHub Actions собирает тестовый APK и AAB для релиза. AAB в этом workflow **не подписан**; перед загрузкой в Google Play необходимо настроить подпись своим ключом.
+Это исходный проект, а не собранный/проверенный APK: в текущей среде Flutter SDK не запускался.
 
-## Важно о Google Play
+## Автоматическая сборка APK через GitHub Actions
 
-Проект всё ещё использует WebView для отображения сайта. Сам по себе технически исправный WebView не гарантирует одобрение: Google Play может отклонить приложения, которые лишь показывают сайт и не дают достаточной самостоятельной ценности или не имеют разрешения владельца сайта. Для полноценной публикации стоит добавить действительно полезные нативные функции и подтвердить право распространять сайт в приложении.
+В проект добавлен workflow `.github/workflows/build.yml`. Чтобы получить APK:
 
-Сборка не была выполнена в этой среде и не проверялась на физическом устройстве. Запусти GitHub Actions и проверь, что workflow завершился успешно, прежде чем устанавливать артефакт.
+1. Создай новый репозиторий на GitHub (например, `zvykmusic-android`).
+2. Распакуй этот архив и загрузи **содержимое** папки проекта в корень репозитория, затем сделай commit в ветку `main`.
+3. Открой вкладку **Actions** в репозитории. Разреши GitHub Actions, если GitHub попросит.
+4. Выбери workflow **Build ZvykMusic Android APK** и нажми **Run workflow**. Также сборка автоматически запускается при push в `main` или `master`.
+5. Когда запуск завершится успешно, открой конкретный запуск workflow, найди раздел **Artifacts** и скачай `zvykmusic-android-apk`. Внутри будет `app-release.apk`.
 
-## Обновлённый интерфейс приложения
-
-Приложение продолжает загружать настоящий сайт `https://web.zvykmusic.ru/` внутри WebView — каталог, поиск, аккаунт и действия сайта не дублируются отдельными фейковыми экранами. После загрузки страницы приложение добавляет тёмное glass-оформление и декоративную интерактивную аудиоволну рядом с HTML `<audio>` элементами. Волна показывает прогресс и позволяет перематывать трек нажатием.
-
-## Автоматическая публикация APK
-
-GitHub Actions собирает debug APK при push в `main`/`master` и публикует его в GitHub Release с тегом `latest`, заменяя предыдущий `ZvykMusic.apk`. APK не загружается как Actions Artifact, поэтому не расходует квоту хранения Artifacts. Это debug-сборка; для публикации в Google Play нужно настроить подпись release-сборки собственным keystore.
+Если сборка завершится ошибкой, открой run в Actions и пришли лог ошибки — по нему можно исправить проект. Этот workflow создаёт недостающие стандартные Android-файлы при сборке; он не заменяет проверку API/адреса сайта и реальное тестирование приложения на устройстве.

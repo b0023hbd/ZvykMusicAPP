@@ -1,0 +1,26 @@
+name: zvykmusic
+description: ZvykMusic native Flutter music app with Apple-inspired glass UI.
+publish_to: "none"
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^1.2.2
+  just_audio: ^0.9.40
+  audio_service: ^0.18.15
+  just_audio_background: ^0.0.1-beta.13
+  audio_session: ^0.1.21
+  cached_network_image: ^3.4.1
+  url_launcher: ^6.3.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
